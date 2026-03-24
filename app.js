@@ -8,6 +8,13 @@ const loginBtn = document.getElementById("loginBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 const loadPlaylistsBtn = document.getElementById("loadPlaylistsBtn");
 const playlistList = document.getElementById("playlistList");
+const playlistNameFilterInput = document.getElementById("playlistNameFilter");
+const selectAllPlaylistsCheckbox = document.getElementById("selectAllPlaylists");
+const selectFilteredBtn = document.getElementById("selectFilteredBtn");
+const clearFilteredBtn = document.getElementById("clearFilteredBtn");
+const clearAllBtn = document.getElementById("clearAllBtn");
+const playlistSortSelect = document.getElementById("playlistSort");
+const playlistSelectionSummary = document.getElementById("playlistSelectionSummary");
 const searchBtn = document.getElementById("searchBtn");
 const searchTermInput = document.getElementById("searchTerm");
 const searchResults = document.getElementById("searchResults");
@@ -23,7 +30,8 @@ const bpmResults = document.getElementById("bpmResults");
 
 redirectUriText.textContent = window.location.origin + window.location.pathname;
 
-let selectedPlaylists = [];
+let allPlaylists = [];
+let selectedPlaylistIds = new Set();
 let playlistCache = new Map();
 
 function setStatus(msg, isError = false) {
@@ -161,31 +169,92 @@ async function fetchAllPlaylists() {
   return all;
 }
 
-function pickNotebookLikePlaylists(playlists) {
-  const hipsters = playlists.find(
-    (p) => p.name.toLowerCase() === "hipsters recommended playlist"
-  );
-  const hrp = playlists.filter((p) => /\bhrp\b/i.test(p.name));
-  const selected = hipsters ? [hipsters, ...hrp] : hrp;
-  const dedup = [];
-  const seen = new Set();
-  for (const p of selected) {
-    if (!seen.has(p.id)) {
-      seen.add(p.id);
-      dedup.push(p);
-    }
+function getFilteredPlaylists() {
+  const q = (playlistNameFilterInput.value || "").trim().toLowerCase();
+  let filtered = allPlaylists;
+  if (q) {
+    filtered = allPlaylists.filter((p) => (p.name || "").toLowerCase().includes(q));
   }
-  return dedup;
+
+  const sort = playlistSortSelect.value || "name-asc";
+  const out = [...filtered];
+  out.sort((a, b) => {
+    const aName = (a.name || "").toLowerCase();
+    const bName = (b.name || "").toLowerCase();
+    const aTracks = a?.tracks?.total || 0;
+    const bTracks = b?.tracks?.total || 0;
+    if (sort === "name-desc") return bName.localeCompare(aName);
+    if (sort === "tracks-desc") return bTracks - aTracks || aName.localeCompare(bName);
+    if (sort === "tracks-asc") return aTracks - bTracks || aName.localeCompare(bName);
+    return aName.localeCompare(bName);
+  });
+  return out;
 }
 
-function renderPlaylists(playlists) {
-  if (!playlists.length) {
-    playlistList.innerHTML = "<p>No matching playlists found.</p>";
+function getSelectedPlaylists() {
+  return allPlaylists.filter((p) => selectedPlaylistIds.has(p.id));
+}
+
+function updateSelectionSummary() {
+  const selectedCount = selectedPlaylistIds.size;
+  const totalCount = allPlaylists.length;
+  const filteredCount = getFilteredPlaylists().length;
+  playlistSelectionSummary.textContent = `${selectedCount} selected of ${totalCount} total (${filteredCount} shown)`;
+  searchBtn.disabled = selectedCount === 0;
+  statsBtn.disabled = selectedCount === 0;
+}
+
+function syncSelectAllCheckbox() {
+  const filtered = getFilteredPlaylists();
+  if (!filtered.length) {
+    selectAllPlaylistsCheckbox.checked = false;
+    selectAllPlaylistsCheckbox.indeterminate = false;
     return;
   }
-  playlistList.innerHTML = playlists
-    .map((p) => `<div><strong>${escapeHtml(p.name)}</strong> <span class="hint">(${p.id})</span></div>`)
-    .join("");
+  const selectedInFiltered = filtered.filter((p) => selectedPlaylistIds.has(p.id)).length;
+  if (selectedInFiltered === 0) {
+    selectAllPlaylistsCheckbox.checked = false;
+    selectAllPlaylistsCheckbox.indeterminate = false;
+  } else if (selectedInFiltered === filtered.length) {
+    selectAllPlaylistsCheckbox.checked = true;
+    selectAllPlaylistsCheckbox.indeterminate = false;
+  } else {
+    selectAllPlaylistsCheckbox.checked = false;
+    selectAllPlaylistsCheckbox.indeterminate = true;
+  }
+}
+
+function renderPlaylists() {
+  const playlists = getFilteredPlaylists();
+  if (!allPlaylists.length) {
+    playlistList.innerHTML = '<p class="empty">No playlists loaded yet.</p>';
+    syncSelectAllCheckbox();
+    updateSelectionSummary();
+    return;
+  }
+  if (!playlists.length) {
+    playlistList.innerHTML = '<p class="empty">No playlists match this filter.</p>';
+    syncSelectAllCheckbox();
+    updateSelectionSummary();
+    return;
+  }
+  const rows = playlists.map((p) => {
+    const checked = selectedPlaylistIds.has(p.id) ? "checked" : "";
+    const owner = p?.owner?.display_name || p?.owner?.id || "unknown";
+    const tracks = p?.tracks?.total ?? 0;
+    return `
+      <label class="playlist-item checkbox-label">
+        <span>
+          <input type="checkbox" class="playlist-checkbox" data-playlist-id="${escapeHtml(p.id)}" ${checked} />
+          ${escapeHtml(p.name)}
+        </span>
+        <span class="playlist-meta">${escapeHtml(owner)} • ${tracks} tracks</span>
+      </label>
+    `;
+  });
+  playlistList.innerHTML = `<div class="playlist-items">${rows.join("")}</div>`;
+  syncSelectAllCheckbox();
+  updateSelectionSummary();
 }
 
 function escapeHtml(str) {
@@ -301,12 +370,12 @@ async function handleAuthCallback() {
 async function loadPlaylistsFlow() {
   try {
     setStatus("Loading playlists...");
-    const all = await fetchAllPlaylists();
-    selectedPlaylists = pickNotebookLikePlaylists(all);
-    renderPlaylists(selectedPlaylists);
-    searchBtn.disabled = selectedPlaylists.length === 0;
-    statsBtn.disabled = selectedPlaylists.length === 0;
-    setStatus(`Loaded ${all.length} playlists, selected ${selectedPlaylists.length}.`);
+    playlistList.innerHTML = '<p class="empty">Loading playlists...</p>';
+    allPlaylists = await fetchAllPlaylists();
+    selectedPlaylistIds = new Set(allPlaylists.map((p) => p.id));
+    playlistNameFilterInput.value = "";
+    renderPlaylists();
+    setStatus(`Loaded ${allPlaylists.length} playlists.`);
   } catch (e) {
     setStatus(e.message, true);
   }
@@ -320,7 +389,12 @@ async function runSearchFlow() {
   }
   searchResults.innerHTML = "<p>Searching...</p>";
   try {
-    const rows = await searchSongInPlaylists(term, selectedPlaylists);
+    const selected = getSelectedPlaylists();
+    if (!selected.length) {
+      searchResults.innerHTML = "<p>Select at least one playlist.</p>";
+      return;
+    }
+    const rows = await searchSongInPlaylists(term, selected);
     renderSearchResults(rows);
   } catch (e) {
     searchResults.innerHTML = `<p>${escapeHtml(e.message)}</p>`;
@@ -330,7 +404,12 @@ async function runSearchFlow() {
 async function runStatsFlow() {
   statsResults.innerHTML = "<p>Computing stats...</p>";
   try {
-    const stats = await contributorStats(selectedPlaylists);
+    const selected = getSelectedPlaylists();
+    if (!selected.length) {
+      statsResults.innerHTML = "<p>Select at least one playlist.</p>";
+      return;
+    }
+    const stats = await contributorStats(selected);
     renderStats(stats);
   } catch (e) {
     statsResults.innerHTML = `<p>${escapeHtml(e.message)}</p>`;
@@ -379,7 +458,8 @@ function updateUiForAuthState() {
 
 function logout() {
   clearTokenInfo();
-  selectedPlaylists = [];
+  allPlaylists = [];
+  selectedPlaylistIds = new Set();
   playlistCache = new Map();
   playlistList.innerHTML = "";
   searchResults.innerHTML = "";
@@ -397,10 +477,46 @@ async function initializeApp() {
   statsBtn.addEventListener("click", runStatsFlow);
   bpmLookupBtn.addEventListener("click", lookupBpm);
   clientIdInput.addEventListener("change", () => saveClientId(clientIdInput.value));
+  playlistNameFilterInput.addEventListener("input", () => renderPlaylists());
+  playlistSortSelect.addEventListener("change", () => renderPlaylists());
+  selectAllPlaylistsCheckbox.addEventListener("change", () => {
+    const filtered = getFilteredPlaylists();
+    for (const p of filtered) {
+      if (selectAllPlaylistsCheckbox.checked) selectedPlaylistIds.add(p.id);
+      else selectedPlaylistIds.delete(p.id);
+    }
+    renderPlaylists();
+  });
+  selectFilteredBtn.addEventListener("click", () => {
+    const filtered = getFilteredPlaylists();
+    for (const p of filtered) selectedPlaylistIds.add(p.id);
+    renderPlaylists();
+  });
+  clearFilteredBtn.addEventListener("click", () => {
+    const filtered = getFilteredPlaylists();
+    for (const p of filtered) selectedPlaylistIds.delete(p.id);
+    renderPlaylists();
+  });
+  clearAllBtn.addEventListener("click", () => {
+    selectedPlaylistIds = new Set();
+    renderPlaylists();
+  });
+  playlistList.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (!target.classList.contains("playlist-checkbox")) return;
+    const playlistId = target.dataset.playlistId;
+    if (!playlistId) return;
+    if (target.checked) selectedPlaylistIds.add(playlistId);
+    else selectedPlaylistIds.delete(playlistId);
+    syncSelectAllCheckbox();
+    updateSelectionSummary();
+  });
 
   initializeStoredInputs();
   await handleAuthCallback();
   updateUiForAuthState();
+  renderPlaylists();
 }
 
 initializeApp().catch((e) => setStatus(e.message || "Initialization failed.", true));

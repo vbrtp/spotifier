@@ -45,6 +45,15 @@ input {
   color: #e9eef2;
 }
 
+select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #384857;
+  border-radius: 8px;
+  background: #0f151a;
+  color: #e9eef2;
+}
+
 button {
   padding: 10px 14px;
   border: none;
@@ -101,4 +110,70 @@ th, td {
   border: 1px solid #31424f;
   padding: 7px;
   text-align: left;
+}
+
+.playlist-toolbar {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.checkbox-label input {
+  width: auto;
+}
+
+.playlist-items {
+  margin-top: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid #31424f;
+  border-radius: 8px;
+  padding: 8px;
+  background: #111820;
+}
+
+.playlist-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 4px;
+  border-bottom: 1px solid #24313c;
+}
+
+.playlist-item:last-child {
+  border-bottom: none;
+}
+
+.playlist-meta {
+  color: #9db0c0;
+  font-size: 0.88rem;
+}
+
+.compact-row {
+  margin-top: 0;
+}
+
+.compact-row > * {
+  flex: unset;
+}
+
+.no-margin {
+  margin: 0;
+}
+
+#playlistList .empty {
+  padding: 12px;
+  border: 1px dashed #31424f;
+  border-radius: 8px;
 }
