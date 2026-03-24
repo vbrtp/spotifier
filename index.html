@@ -65,8 +65,33 @@
     <section class="card">
       <h2>3) Search song in selected playlists</h2>
       <div class="row">
-        <input id="searchTerm" placeholder="Song title or artist term (e.g. hu)" />
+        <input id="searchTerm" placeholder="Search songs in selected playlists" />
         <button id="searchBtn" disabled>Search</button>
+      </div>
+      <div class="playlist-toolbar">
+        <div class="row compact-row">
+          <label class="checkbox-label no-margin" for="searchInTitle">
+            <input type="checkbox" id="searchInTitle" checked />
+            In title
+          </label>
+          <label class="checkbox-label no-margin" for="searchInArtist">
+            <input type="checkbox" id="searchInArtist" checked />
+            In artist
+          </label>
+          <label class="checkbox-label no-margin" for="exactMatch">
+            <input type="checkbox" id="exactMatch" />
+            Exact match
+          </label>
+        </div>
+        <div class="row compact-row">
+          <label class="no-margin" for="maxResults">Max results</label>
+          <select id="maxResults" aria-label="Max search results">
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
+            <option value="250">250</option>
+            <option value="500">500</option>
+          </select>
+        </div>
       </div>
       <div id="searchResults"></div>
     </section>

@@ -149,10 +149,19 @@ th, td {
   gap: 12px;
   padding: 6px 4px;
   border-bottom: 1px solid #24313c;
+  border-radius: 6px;
 }
 
 .playlist-item:last-child {
   border-bottom: none;
+}
+
+.playlist-item:hover {
+  background: #19242e;
+}
+
+.playlist-item input[type="checkbox"] {
+  transform: scale(1.15);
 }
 
 .playlist-meta {
@@ -176,4 +185,11 @@ th, td {
   padding: 12px;
   border: 1px dashed #31424f;
   border-radius: 8px;
+}
+
+#searchResults .empty {
+  padding: 12px;
+  border: 1px dashed #31424f;
+  border-radius: 8px;
+  margin-top: 10px;
 }

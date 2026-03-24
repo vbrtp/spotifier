@@ -17,6 +17,10 @@ const playlistSortSelect = document.getElementById("playlistSort");
 const playlistSelectionSummary = document.getElementById("playlistSelectionSummary");
 const searchBtn = document.getElementById("searchBtn");
 const searchTermInput = document.getElementById("searchTerm");
+const searchInTitleCheckbox = document.getElementById("searchInTitle");
+const searchInArtistCheckbox = document.getElementById("searchInArtist");
+const exactMatchCheckbox = document.getElementById("exactMatch");
+const maxResultsSelect = document.getElementById("maxResults");
 const searchResults = document.getElementById("searchResults");
 const statsBtn = document.getElementById("statsBtn");
 const statsResults = document.getElementById("statsResults");
@@ -33,6 +37,7 @@ redirectUriText.textContent = window.location.origin + window.location.pathname;
 let allPlaylists = [];
 let selectedPlaylistIds = new Set();
 let playlistCache = new Map();
+let filterDebounceTimer = null;
 
 function setStatus(msg, isError = false) {
   authStatus.textContent = msg;
@@ -280,6 +285,12 @@ async function fetchAllTracksForPlaylist(playlistId) {
 
 async function searchSongInPlaylists(term, playlists) {
   const q = term.toLowerCase().trim();
+  const inTitle = searchInTitleCheckbox.checked;
+  const inArtist = searchInArtistCheckbox.checked;
+  const exact = exactMatchCheckbox.checked;
+  const maxResults = Number(maxResultsSelect.value || 100);
+  if (!inTitle && !inArtist) throw new Error("Enable at least one search scope (title/artist).");
+
   const out = [];
   for (const p of playlists) {
     const items = await fetchAllTracksForPlaylist(p.id);
@@ -288,13 +299,15 @@ async function searchSongInPlaylists(term, playlists) {
       if (!track) continue;
       const title = track.name || "";
       const artists = (track.artists || []).map((a) => a.name).join(", ");
-      const blob = `${title} ${artists}`.toLowerCase();
-      if (blob.includes(q)) {
+      const titleMatch = inTitle && (exact ? title.toLowerCase() === q : title.toLowerCase().includes(q));
+      const artistMatch = inArtist && (exact ? artists.toLowerCase() === q : artists.toLowerCase().includes(q));
+      if (titleMatch || artistMatch) {
         out.push({
           playlist: p.name,
           song: title,
           artists
         });
+        if (out.length >= maxResults) return out;
       }
     }
   }
@@ -323,13 +336,13 @@ async function contributorStats(playlists) {
 
 function renderSearchResults(rows) {
   if (!rows.length) {
-    searchResults.innerHTML = "<p>No matches found.</p>";
+    searchResults.innerHTML = '<p class="empty">No matches found with current search settings.</p>';
     return;
   }
   const body = rows
     .map((r) => `<tr><td>${escapeHtml(r.playlist)}</td><td>${escapeHtml(r.song)}</td><td>${escapeHtml(r.artists)}</td></tr>`)
     .join("");
-  searchResults.innerHTML = `<table><thead><tr><th>Playlist</th><th>Song</th><th>Artists</th></tr></thead><tbody>${body}</tbody></table>`;
+  searchResults.innerHTML = `<p class="hint">${rows.length} result(s)</p><table><thead><tr><th>Playlist</th><th>Song</th><th>Artists</th></tr></thead><tbody>${body}</tbody></table>`;
 }
 
 function renderStats(stats) {
@@ -375,7 +388,7 @@ async function loadPlaylistsFlow() {
     selectedPlaylistIds = new Set(allPlaylists.map((p) => p.id));
     playlistNameFilterInput.value = "";
     renderPlaylists();
-    setStatus(`Loaded ${allPlaylists.length} playlists.`);
+    setStatus(`Loaded ${allPlaylists.length} playlists. Refine list, then search selected.`);
   } catch (e) {
     setStatus(e.message, true);
   }
@@ -477,7 +490,10 @@ async function initializeApp() {
   statsBtn.addEventListener("click", runStatsFlow);
   bpmLookupBtn.addEventListener("click", lookupBpm);
   clientIdInput.addEventListener("change", () => saveClientId(clientIdInput.value));
-  playlistNameFilterInput.addEventListener("input", () => renderPlaylists());
+  playlistNameFilterInput.addEventListener("input", () => {
+    if (filterDebounceTimer) window.clearTimeout(filterDebounceTimer);
+    filterDebounceTimer = window.setTimeout(() => renderPlaylists(), 120);
+  });
   playlistSortSelect.addEventListener("change", () => renderPlaylists());
   selectAllPlaylistsCheckbox.addEventListener("change", () => {
     const filtered = getFilteredPlaylists();
@@ -500,6 +516,9 @@ async function initializeApp() {
   clearAllBtn.addEventListener("click", () => {
     selectedPlaylistIds = new Set();
     renderPlaylists();
+  });
+  searchTermInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !searchBtn.disabled) runSearchFlow();
   });
   playlistList.addEventListener("change", (event) => {
     const target = event.target;
