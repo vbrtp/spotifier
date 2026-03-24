@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spotifier Web</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="container">
+    <h1>Spotifier Web</h1>
+    <p class="muted">
+      Static Spotify playlist explorer inspired by your notebook. Safe for GitHub Pages: no client secret is stored in code.
+    </p>
+
+    <section class="card">
+      <h2>1) Spotify Auth (PKCE)</h2>
+      <label for="clientId">Spotify Client ID</label>
+      <input id="clientId" placeholder="Paste your Spotify app client ID" />
+      <p class="hint">
+        In Spotify Developer Dashboard, add this exact Redirect URI:
+        <code id="redirectUriText"></code>
+      </p>
+      <div class="row">
+        <button id="loginBtn">Log in with Spotify</button>
+        <button id="logoutBtn" class="secondary">Log out</button>
+      </div>
+      <p id="authStatus" class="status">Not authenticated.</p>
+    </section>
+
+    <section class="card">
+      <h2>2) Load Playlists</h2>
+      <div class="row">
+        <button id="loadPlaylistsBtn" disabled>Load my playlists</button>
+      </div>
+      <p class="hint">Detected "Hipsters recommended playlist" + playlists with "HRP" in the name.</p>
+      <div id="playlistList"></div>
+    </section>
+
+    <section class="card">
+      <h2>3) Search song in selected playlists</h2>
+      <div class="row">
+        <input id="searchTerm" placeholder="Song title or artist term (e.g. hu)" />
+        <button id="searchBtn" disabled>Search</button>
+      </div>
+      <div id="searchResults"></div>
+    </section>
+
+    <section class="card">
+      <h2>4) Contributor stats by playlist</h2>
+      <div class="row">
+        <button id="statsBtn" disabled>Compute stats</button>
+      </div>
+      <div id="statsResults"></div>
+    </section>
+
+    <section class="card">
+      <h2>Optional: BPM/Key lookup (GetSongBPM)</h2>
+      <p class="hint">
+        Do not commit API keys. Enter your key at runtime only (stored in browser local storage).
+      </p>
+      <label for="bpmKey">GetSongBPM API Key (optional)</label>
+      <input id="bpmKey" placeholder="Paste API key (kept local in your browser)" />
+      <div class="row">
+        <input id="bpmArtist" placeholder="Artist" />
+        <input id="bpmSong" placeholder="Song title" />
+        <button id="bpmLookupBtn">Lookup BPM/Key</button>
+      </div>
+      <div id="bpmResults"></div>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>

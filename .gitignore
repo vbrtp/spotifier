@@ -1,0 +1,5 @@
+node_modules/
+.DS_Store
+
+# Contains hardcoded keys in the original notebook; keep private.
+Spotify.ipynb
