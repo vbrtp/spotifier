@@ -10,7 +10,7 @@ This project converts the notebook workflow into a static website that can be de
   - any playlist containing `HRP` in its name
 - Searches songs/artists across selected playlists.
 - Computes contributor stats (tracks added per user) for each selected playlist.
-- Optional GetSongBPM lookup using a runtime API key you provide in the UI.
+- (BPM/key lookup removed from the public UI in this version.)
 
 ## Security model (public repo safe)
 

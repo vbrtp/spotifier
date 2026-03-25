@@ -1,7 +1,6 @@
 const SCOPES = "playlist-read-private playlist-read-collaborative";
 const TOKEN_STORAGE_KEY = "spotifier_token_info";
 const CLIENT_ID_KEY = "spotifier_client_id";
-const BPM_KEY_STORAGE = "spotifier_bpm_api_key";
 
 const authStatus = document.getElementById("authStatus");
 const loginBtn = document.getElementById("loginBtn");
@@ -28,11 +27,6 @@ const statsTopNSelect = document.getElementById("statsTopN");
 const statsShowTableCheckbox = document.getElementById("statsShowTable");
 const clientIdInput = document.getElementById("clientId");
 const redirectUriText = document.getElementById("redirectUriText");
-const bpmKeyInput = document.getElementById("bpmKey");
-const bpmArtistInput = document.getElementById("bpmArtist");
-const bpmSongInput = document.getElementById("bpmSong");
-const bpmLookupBtn = document.getElementById("bpmLookupBtn");
-const bpmResults = document.getElementById("bpmResults");
 
 redirectUriText.textContent = window.location.origin + window.location.pathname;
 
@@ -552,37 +546,8 @@ async function runStatsFlow() {
   }
 }
 
-async function lookupBpm() {
-  const key = bpmKeyInput.value.trim();
-  const artist = bpmArtistInput.value.trim();
-  const song = bpmSongInput.value.trim();
-  if (!key || !artist || !song) {
-    bpmResults.innerHTML = "<p>Provide API key, artist, and song.</p>";
-    return;
-  }
-  localStorage.setItem(BPM_KEY_STORAGE, key);
-
-  const lookup = encodeURIComponent(`song:${song} artist:${artist}`);
-  const url = `https://api.getsong.co/search/?api_key=${encodeURIComponent(key)}&type=both&lookup=${lookup}`;
-  bpmResults.innerHTML = "<p>Looking up...</p>";
-  try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`GetSongBPM error (${res.status}).`);
-    const data = await res.json();
-    const first = data?.search?.[0];
-    if (!first) {
-      bpmResults.innerHTML = "<p>No result found.</p>";
-      return;
-    }
-    bpmResults.innerHTML = `<p><strong>${escapeHtml(first.title || song)}</strong> - BPM: ${escapeHtml(String(first.tempo || "N/A"))}, Key: ${escapeHtml(String(first.key_of || "N/A"))}</p>`;
-  } catch (e) {
-    bpmResults.innerHTML = `<p>${escapeHtml(e.message)}</p>`;
-  }
-}
-
 function initializeStoredInputs() {
   clientIdInput.value = getClientId();
-  bpmKeyInput.value = localStorage.getItem(BPM_KEY_STORAGE) || "";
 }
 
 function updateUiForAuthState() {
@@ -611,7 +576,6 @@ async function initializeApp() {
   loadPlaylistsBtn.addEventListener("click", loadPlaylistsFlow);
   searchBtn.addEventListener("click", runSearchFlow);
   statsBtn.addEventListener("click", runStatsFlow);
-  bpmLookupBtn.addEventListener("click", lookupBpm);
   clientIdInput.addEventListener("change", () => saveClientId(clientIdInput.value));
   playlistNameFilterInput.addEventListener("input", () => {
     if (filterDebounceTimer) window.clearTimeout(filterDebounceTimer);
