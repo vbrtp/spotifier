@@ -24,6 +24,8 @@ const maxResultsSelect = document.getElementById("maxResults");
 const searchResults = document.getElementById("searchResults");
 const statsBtn = document.getElementById("statsBtn");
 const statsResults = document.getElementById("statsResults");
+const statsTopNSelect = document.getElementById("statsTopN");
+const statsShowTableCheckbox = document.getElementById("statsShowTable");
 const clientIdInput = document.getElementById("clientId");
 const redirectUriText = document.getElementById("redirectUriText");
 const bpmKeyInput = document.getElementById("bpmKey");
@@ -351,13 +353,134 @@ function renderStats(stats) {
     statsResults.innerHTML = "<p>No stats to show.</p>";
     return;
   }
+
+  const topN = Number(statsTopNSelect.value || 10);
+  const showTable = Boolean(statsShowTableCheckbox.checked);
+
   const sections = playlists.map((name) => {
-    const rows = Object.entries(stats[name])
+    const entries = Object.entries(stats[name] || {});
+    entries.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const slice = entries.slice(0, topN);
+
+    const canvasId = `chart-${escapeId(name)}`;
+    const chartRows = slice
       .map(([user, count]) => `<tr><td>${escapeHtml(user)}</td><td>${count}</td></tr>`)
       .join("");
-    return `<h3>${escapeHtml(name)}</h3><table><thead><tr><th>User</th><th>Tracks added</th></tr></thead><tbody>${rows}</tbody></table>`;
+
+    const legendText = slice.length
+      ? `Top ${slice.length} contributors (by tracks added)`
+      : "No contributor data for this playlist.";
+
+    const tableHtml = showTable
+      ? `<table><thead><tr><th>User</th><th>Tracks added</th></tr></thead><tbody>${chartRows}</tbody></table>`
+      : "";
+
+    return `
+      <div class="stats-chart">
+        <h3>${escapeHtml(name)}</h3>
+        <canvas id="${canvasId}" class="chart-canvas" aria-label="Contributor bar chart"></canvas>
+        <div class="chart-legend">${escapeHtml(legendText)}</div>
+        ${tableHtml}
+      </div>
+    `;
   });
+
   statsResults.innerHTML = sections.join("");
+
+  // Render charts after DOM insertion.
+  for (const name of playlists) {
+    const entries = Object.entries(stats[name] || {});
+    entries.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const slice = entries.slice(0, topN);
+    const canvas = document.getElementById(`chart-${escapeId(name)}`);
+    if (!canvas) continue;
+    drawContributorBarChart(canvas, slice.map((x) => x[0]), slice.map((x) => x[1]));
+  }
+}
+
+function escapeId(str) {
+  // Make a safe HTML id value. This does not need to be reversible.
+  return String(str).replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+function drawContributorBarChart(canvas, labels, values) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const cssHeight = 260;
+  const cssWidth = canvas.parentElement ? canvas.parentElement.clientWidth : 600;
+  const width = Math.max(320, Math.floor(cssWidth));
+  const height = cssHeight;
+
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+  canvas.width = Math.floor(width * dpr);
+  canvas.height = Math.floor(height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  ctx.clearRect(0, 0, width, height);
+
+  const paddingLeft = 56;
+  const paddingRight = 18;
+  const paddingTop = 14;
+  const paddingBottom = 44;
+
+  const plotW = width - paddingLeft - paddingRight;
+  const plotH = height - paddingTop - paddingBottom;
+  const maxV = Math.max(1, ...values);
+
+  // Background grid lines.
+  ctx.strokeStyle = "#31424f";
+  ctx.lineWidth = 1;
+  const gridLines = 4;
+  for (let i = 0; i <= gridLines; i++) {
+    const y = paddingTop + (plotH * i) / gridLines;
+    ctx.beginPath();
+    ctx.moveTo(paddingLeft, y);
+    ctx.lineTo(paddingLeft + plotW, y);
+    ctx.stroke();
+  }
+
+  // Axis labels.
+  ctx.fillStyle = "#9db0c0";
+  ctx.font = "12px Arial";
+  for (let i = 0; i <= gridLines; i++) {
+    const v = Math.round(maxV - (maxV * i) / gridLines);
+    const y = paddingTop + (plotH * i) / gridLines + 4;
+    ctx.fillText(String(v), 10, y);
+  }
+
+  const barGap = 10;
+  const barW = values.length
+    ? Math.max(10, Math.floor((plotW - barGap * (values.length - 1)) / values.length))
+    : plotW;
+
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    const normalized = v / maxV;
+    const barH = Math.max(0, Math.floor(plotH * normalized));
+    const x = paddingLeft + i * (barW + barGap);
+    const y = paddingTop + (plotH - barH);
+
+    // Bar fill.
+    const hue = (i * 47) % 360;
+    ctx.fillStyle = `hsl(${hue} 70% 50%)`;
+    ctx.fillRect(x, y, barW, barH);
+
+    // Bar value label.
+    ctx.fillStyle = "#0f151a";
+    ctx.font = "12px Arial";
+    const valText = String(v);
+    ctx.fillText(valText, x + 4, y + 16);
+
+    // X labels (truncated).
+    const label = labels[i] || "";
+    const maxChars = 14;
+    const t = label.length > maxChars ? label.slice(0, maxChars - 1) + "…" : label;
+    ctx.fillStyle = "#9db0c0";
+    ctx.fillText(t, x + 4, paddingTop + plotH + 26);
+  }
 }
 
 async function handleAuthCallback() {

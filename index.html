@@ -101,6 +101,20 @@
       <div class="row">
         <button id="statsBtn" disabled>Compute stats</button>
       </div>
+      <div class="playlist-toolbar">
+        <div class="row compact-row">
+          <label for="statsTopN" class="no-margin">Chart top</label>
+          <select id="statsTopN" aria-label="Top contributors to show in chart">
+            <option value="5">Top 5</option>
+            <option value="10" selected>Top 10</option>
+            <option value="20">Top 20</option>
+          </select>
+        </div>
+        <label class="checkbox-label no-margin" for="statsShowTable">
+          <input type="checkbox" id="statsShowTable" checked />
+          Show table
+        </label>
+      </div>
       <div id="statsResults"></div>
     </section>
 
