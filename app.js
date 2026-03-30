@@ -37,6 +37,36 @@ let selectedPlaylistIds = new Set();
 let playlistCache = new Map();
 let filterDebounceTimer = null;
 let artistGenresCache = new Map(); // artistId -> array of genres (lowercase)
+let genreSearchWarning = "";
+
+const ARTIST_GENRES_CACHE_LS_KEY = "spotifier_artist_genres_cache_v1";
+
+function loadArtistGenresFromLocalStorage() {
+  const raw = localStorage.getItem(ARTIST_GENRES_CACHE_LS_KEY);
+  if (!raw) return;
+  try {
+    const obj = JSON.parse(raw);
+    if (!obj || typeof obj !== "object") return;
+    for (const [artistId, genres] of Object.entries(obj)) {
+      if (Array.isArray(genres)) {
+        artistGenresCache.set(artistId, genres.map((g) => String(g).toLowerCase()));
+      }
+    }
+  } catch {
+    // Ignore corrupted cache.
+  }
+}
+
+function persistArtistGenresToLocalStorage() {
+  // Best-effort persistence; avoids throwing on quota errors.
+  if (artistGenresCache.size > 4000) return;
+  const obj = Object.fromEntries(artistGenresCache.entries());
+  try {
+    localStorage.setItem(ARTIST_GENRES_CACHE_LS_KEY, JSON.stringify(obj));
+  } catch {
+    // Ignore write failures.
+  }
+}
 
 function setStatus(msg, isError = false) {
   authStatus.textContent = msg;
@@ -153,11 +183,20 @@ async function refreshTokenIfNeeded() {
   return token.access_token;
 }
 
-async function spotifyFetch(path) {
+async function spotifyFetch(path, retriesLeft = 4) {
   const accessToken = await refreshTokenIfNeeded();
   const res = await fetch(`https://api.spotify.com/v1${path}`, {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
+
+  if (res.status === 429 && retriesLeft > 0) {
+    const retryAfterRaw = res.headers.get("Retry-After") || res.headers.get("retry-after") || "1";
+    const retryAfterSeconds = Number(retryAfterRaw);
+    const waitMs = Math.min(5000, (Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : 1) * 1000);
+    await new Promise((r) => setTimeout(r, waitMs));
+    return spotifyFetch(path, retriesLeft - 1);
+  }
+
   if (!res.ok) throw new Error(`Spotify API error (${res.status}) for ${path}`);
   return res.json();
 }
@@ -295,6 +334,12 @@ async function searchSongInPlaylists(term, playlists) {
   }
 
   const out = [];
+  genreSearchWarning = "";
+  const genreFetchContext = {
+    maxArtistsToFetch: 25,
+    fetchedArtists: 0,
+    exhausted: false
+  };
   for (const p of playlists) {
     const items = await fetchAllTracksForPlaylist(p.id);
     for (const item of items) {
@@ -311,7 +356,7 @@ async function searchSongInPlaylists(term, playlists) {
       let genreMatch = false;
       if (inGenre) {
         const artistIds = (track.artists || []).map((a) => a.id).filter(Boolean);
-        const genres = await fetchGenresForArtistIds(artistIds);
+        const genres = await fetchGenresForArtistIds(artistIds, genreFetchContext);
         // Match against any genre for any contributing artist.
         genreMatch = genres.some((g) => matchText(g, q, exact));
       }
@@ -335,22 +380,44 @@ function matchText(value, queryLower, exact) {
   return v.includes(queryLower);
 }
 
-async function fetchGenresForArtistIds(artistIds) {
+async function fetchGenresForArtistIds(artistIds, ctx) {
   // If we have no artist ids, we can't infer genres.
   if (!artistIds.length) return [];
 
+  const uniqueIds = [...new Set(artistIds.filter(Boolean))];
   const allGenres = [];
-  for (const id of artistIds) {
+
+  for (const id of uniqueIds) {
     if (!id) continue;
+
     if (artistGenresCache.has(id)) {
       allGenres.push(...artistGenresCache.get(id));
       continue;
     }
+
+    // Safety cap to avoid pulling in huge artist lists and triggering rate limits.
+    if (ctx && ctx.fetchedArtists >= ctx.maxArtistsToFetch) {
+      if (ctx) ctx.exhausted = true;
+      continue;
+    }
+
     const artist = await spotifyFetch(`/artists/${id}`);
-    const genres = Array.isArray(artist?.genres) ? artist.genres.map((g) => String(g).toLowerCase()) : [];
+    const genres = Array.isArray(artist?.genres)
+      ? artist.genres.map((g) => String(g).toLowerCase())
+      : [];
+
     artistGenresCache.set(id, genres);
     allGenres.push(...genres);
+
+    if (ctx) ctx.fetchedArtists += 1;
+    persistArtistGenresToLocalStorage();
   }
+
+  if (ctx?.exhausted) {
+    genreSearchWarning =
+      "Genre search hit Spotify rate limits, so results may be incomplete. Try using fewer playlists or the title/artist/album scopes.";
+  }
+
   return allGenres;
 }
 
@@ -375,14 +442,17 @@ async function contributorStats(playlists) {
 }
 
 function renderSearchResults(rows) {
+  const warningHtml = genreSearchWarning
+    ? `<p class="hint">${escapeHtml(genreSearchWarning)}</p>`
+    : "";
   if (!rows.length) {
-    searchResults.innerHTML = '<p class="empty">No matches found with current search settings.</p>';
+    searchResults.innerHTML = `${warningHtml}<p class="empty">No matches found with current search settings.</p>`;
     return;
   }
   const body = rows
     .map((r) => `<tr><td>${escapeHtml(r.playlist)}</td><td>${escapeHtml(r.song)}</td><td>${escapeHtml(r.artists)}</td></tr>`)
     .join("");
-  searchResults.innerHTML = `<p class="hint">${rows.length} result(s)</p><table><thead><tr><th>Playlist</th><th>Song</th><th>Artists</th></tr></thead><tbody>${body}</tbody></table>`;
+  searchResults.innerHTML = `${warningHtml}<p class="hint">${rows.length} result(s)</p><table><thead><tr><th>Playlist</th><th>Song</th><th>Artists</th></tr></thead><tbody>${body}</tbody></table>`;
 }
 
 function renderStats(stats) {
@@ -606,7 +676,6 @@ function logout() {
   allPlaylists = [];
   selectedPlaylistIds = new Set();
   playlistCache = new Map();
-  artistGenresCache = new Map();
   playlistList.innerHTML = "";
   searchResults.innerHTML = "";
   statsResults.innerHTML = "";
@@ -665,6 +734,7 @@ async function initializeApp() {
   });
 
   initializeStoredInputs();
+  loadArtistGenresFromLocalStorage();
   await handleAuthCallback();
   updateUiForAuthState();
   renderPlaylists();
