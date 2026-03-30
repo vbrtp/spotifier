@@ -18,8 +18,10 @@ const searchBtn = document.getElementById("searchBtn");
 const searchTermInput = document.getElementById("searchTerm");
 const searchInTitleCheckbox = document.getElementById("searchInTitle");
 const searchInArtistCheckbox = document.getElementById("searchInArtist");
+const searchInGenreCheckbox = document.getElementById("searchInGenre");
 const exactMatchCheckbox = document.getElementById("exactMatch");
 const maxResultsSelect = document.getElementById("maxResults");
+const searchInAlbumCheckbox = document.getElementById("searchInAlbum");
 const searchResults = document.getElementById("searchResults");
 const statsBtn = document.getElementById("statsBtn");
 const statsResults = document.getElementById("statsResults");
@@ -34,6 +36,7 @@ let allPlaylists = [];
 let selectedPlaylistIds = new Set();
 let playlistCache = new Map();
 let filterDebounceTimer = null;
+let artistGenresCache = new Map(); // artistId -> array of genres (lowercase)
 
 function setStatus(msg, isError = false) {
   authStatus.textContent = msg;
@@ -283,9 +286,13 @@ async function searchSongInPlaylists(term, playlists) {
   const q = term.toLowerCase().trim();
   const inTitle = searchInTitleCheckbox.checked;
   const inArtist = searchInArtistCheckbox.checked;
+  const inGenre = searchInGenreCheckbox.checked;
   const exact = exactMatchCheckbox.checked;
   const maxResults = Number(maxResultsSelect.value || 100);
-  if (!inTitle && !inArtist) throw new Error("Enable at least one search scope (title/artist).");
+  const inAlbum = searchInAlbumCheckbox.checked;
+  if (!inTitle && !inArtist && !inGenre && !inAlbum) {
+    throw new Error("Enable at least one search scope (title/artist/genre/album).");
+  }
 
   const out = [];
   for (const p of playlists) {
@@ -295,9 +302,21 @@ async function searchSongInPlaylists(term, playlists) {
       if (!track) continue;
       const title = track.name || "";
       const artists = (track.artists || []).map((a) => a.name).join(", ");
-      const titleMatch = inTitle && (exact ? title.toLowerCase() === q : title.toLowerCase().includes(q));
-      const artistMatch = inArtist && (exact ? artists.toLowerCase() === q : artists.toLowerCase().includes(q));
-      if (titleMatch || artistMatch) {
+      const albumName = track?.album?.name || "";
+
+      const titleMatch = inTitle && matchText(title, q, exact);
+      const artistMatch = inArtist && matchText(artists, q, exact);
+      const albumMatch = inAlbum && matchText(albumName, q, exact);
+
+      let genreMatch = false;
+      if (inGenre) {
+        const artistIds = (track.artists || []).map((a) => a.id).filter(Boolean);
+        const genres = await fetchGenresForArtistIds(artistIds);
+        // Match against any genre for any contributing artist.
+        genreMatch = genres.some((g) => matchText(g, q, exact));
+      }
+
+      if (titleMatch || artistMatch || albumMatch || genreMatch) {
         out.push({
           playlist: p.name,
           song: title,
@@ -308,6 +327,31 @@ async function searchSongInPlaylists(term, playlists) {
     }
   }
   return out;
+}
+
+function matchText(value, queryLower, exact) {
+  const v = String(value || "").toLowerCase();
+  if (exact) return v === queryLower;
+  return v.includes(queryLower);
+}
+
+async function fetchGenresForArtistIds(artistIds) {
+  // If we have no artist ids, we can't infer genres.
+  if (!artistIds.length) return [];
+
+  const allGenres = [];
+  for (const id of artistIds) {
+    if (!id) continue;
+    if (artistGenresCache.has(id)) {
+      allGenres.push(...artistGenresCache.get(id));
+      continue;
+    }
+    const artist = await spotifyFetch(`/artists/${id}`);
+    const genres = Array.isArray(artist?.genres) ? artist.genres.map((g) => String(g).toLowerCase()) : [];
+    artistGenresCache.set(id, genres);
+    allGenres.push(...genres);
+  }
+  return allGenres;
 }
 
 async function contributorStats(playlists) {
@@ -562,6 +606,7 @@ function logout() {
   allPlaylists = [];
   selectedPlaylistIds = new Set();
   playlistCache = new Map();
+  artistGenresCache = new Map();
   playlistList.innerHTML = "";
   searchResults.innerHTML = "";
   statsResults.innerHTML = "";
